@@ -1,58 +1,59 @@
-                 ooooo     ooo  ooooooooo.  ooooooo  ooooo
-                 `888'     `8'  `888   `Y88. `8888    d8'
-                  888       8    888   .d88'   Y888..8P
-                  888       8    888ooo88P'     `8888'
-                  888       8    888           .8PY888.
-                  `88.    .8'    888          d8'  `888b
-                    `YbodP'     o888o       o888o  o88888o
+                    .::     .::.::      .::      .::
+                    .::     .::.::       .::   .::  
+                    .::     .::.::        .:: .::   
+                    .::     .::.::          .::     
+                    .::     .::.::        .:: .::   
+                    .::     .::.::       .::   .::  
+                      .:::::   .::::::::.::      .::
+                                
 
 
-                    The Ultimate Packer for eXecutables
-   Copyright (c) 1996-2026 Markus Oberhumer, Laszlo Molnar & John Reiser
-                           https://upx.github.io
+             The Ultimate (Lying) Packer for eXecutables
+   Copyright (c) 1996-2026 Markus Oberhumer, Laszlo Molnar, John Reiser, & B00TK1D
+                           (Original: https://upx.github.io)
 
 
 
 WELCOME
 =======
 
-Welcome to UPX !
+Welcome to ULX !
 
-UPX is a free, secure, portable, extendable, high-performance
-executable packer for several executable formats.
+ULX is a free, secure, portable, extendable, high-performance
+executable packer for several executable formats - with a slight twist.
 
 
 INTRODUCTION
 ============
 
-UPX is an advanced executable file compressor. UPX will typically
+ULX is an advanced executable file compressor. ULX will typically
 reduce the file size of programs and DLLs by around 50%-70%, thus
 reducing disk space, network load times, download times and
 other distribution and storage costs.
 
-Programs and libraries compressed by UPX are completely self-contained
+Programs and libraries compressed by ULX are completely self-contained
 and run exactly as before, with no runtime or memory penalty for most
 of the supported formats.
 
-UPX supports a number of different executable formats, including
+ULX supports a number of different executable formats, including
 Windows programs and DLLs, and Linux executables.
 
-UPX is free software distributed under the term of the GNU General
+ULX is free software distributed under the term of the GNU General
 Public License. Full source code is available.
 
-UPX may be distributed and used freely, even with commercial applications.
-See the UPX License Agreements for details.
+ULX may be distributed and used freely, even with commercial applications.
+See the ULX License Agreements for details.
 
 
 SECURITY CONTEXT
 ================
 
-IMPORTANT NOTE: UPX inherits the security context of any files it handles.
+IMPORTANT NOTE: ULX inherits the security context of any files it handles.
 
 This means that packing, unpacking, or even testing or listing a file requires
 the same security considerations as actually executing the file.
 
-Use UPX on trusted files only!
+Use ULX on trusted files only!
 
 
 SHORT DOCUMENTATION
@@ -64,6 +65,12 @@ results try 'upx --best program.exe' or 'upx --brute program.exe'.
 Please see the file doc/upx-doc.txt for the full documentation. The files
 NEWS and doc/BUGS.txt also contain various tidbits of information, as
 does the output of 'upx --help'.
+
+ULX-SPECIFIC USAGE
+===================
+
+To mask a binary, just append the decoy masking binary to the end of the
+original upx command: 'upx -f -o out_binary real_binary decoy_binary'
 
 
 THE FUTURE
@@ -87,8 +94,9 @@ COPYRIGHT
 Copyright (C) 1996-2026 Markus Franz Xaver Johannes Oberhumer
 Copyright (C) 1996-2026 Laszlo Molnar
 Copyright (C) 2000-2026 John F. Reiser
+Copyright (C) 2026 B00TK1D
 
-UPX is distributed with full source code under the terms of the
+ULX is distributed with full source code under the terms of the
 GNU General Public License v2+; either under the pure GPLv2+ (see
 the file COPYING), or (at your option) under the GPLv2+ with special
 exceptions and restrictions granting the free usage for all binaries
@@ -98,9 +106,9 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-You should have received a copy of the UPX License Agreements along
+You should have received a copy of the ULX License Agreements along
 with this program; see the files COPYING and LICENSE. If not,
-visit the UPX home page.
+visit the ULX home page.
 
 
 Share and enjoy,
@@ -113,7 +121,10 @@ Markus & Laszlo & John
    John F. Reiser
    <jreiser@BitWagon.com>
 
+   B00TK1D
+   <ulx@bootk.id>
 
-[ The term UPX is a shorthand for the Ultimate Packer for eXecutables
+
+[ The term ULX is a shorthand for the Ultimate (Lying) Packer for eXecutables
   and holds no connection with potential owners of registered trademarks
   or other rights. ]
