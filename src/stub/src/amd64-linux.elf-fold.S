@@ -229,6 +229,7 @@ proc_self_exe:
         .asciz "/proc/self/exe"
 
 upxfd_create: .globl upxfd_create // (char *tag, unsigned flags)
+memfd_create: .globl memfd_create
 0: // try memfd_create
         movl $__NR_memfd_create,%eax; syscall
         test %eax,%eax; jns ok_memfd  // success
@@ -295,6 +296,9 @@ brk: .globl brk
         movb $ __NR_brk,%al; 5: jmp 5f
 close: .globl close
         movb $ __NR_close,%al; 5: jmp 5f
+execve: .globl execve
+        movl $59,%eax
+        jmp sys_check
 ftruncate: .globl ftruncate
         movb $__NR_ftruncate,%al; 5: jmp 5f
 open: .globl open

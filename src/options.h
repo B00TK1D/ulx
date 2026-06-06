@@ -86,6 +86,8 @@ struct Options final {
     bool no_env;
     bool no_progress;
     const char *output_name;
+    const char *true_name;   // real binary packed and executed at runtime
+    const char *mask_name;   // decoy binary returned by upx -d
     bool preserve_link;
     bool preserve_mode;
     bool preserve_ownership;

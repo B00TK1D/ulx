@@ -40,6 +40,8 @@ public:
     virtual ~UiPacker() noexcept;
 
     static void uiConfirmUpdate();
+    static void uiMaskUnpackStart(upx_off_t packed_size, upx_off_t mask_size);
+    static void uiMaskTest(const char *name, upx_off_t packed_size);
     static void uiPackTotal();
     static void uiUnpackTotal();
     static void uiListTotal(bool uncompress = false);

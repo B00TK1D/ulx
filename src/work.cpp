@@ -45,6 +45,7 @@
 #include "packmast.h"
 #include "ui.h"
 #include "util/membuffer.h"
+#include "compress/compress.h"
 
 #if USE_UTIMENSAT && defined(AT_FDCWD)
 #elif defined(_WIN32) || defined(__CYGWIN__)
@@ -199,6 +200,89 @@ static noinline void copy_file_attributes(const XStat *xst, const char *oname, b
     UNUSED(preserve_timestamp);
 }
 
+// ULX5 dual-binary constants
+#define ULX_MAGIC       "ULX1"
+#define ULX_FOOTER_SIZE 24
+#define ULX_BINFO_SIZE  12
+#define ULX_SCAN_TAIL   128
+
+static bool validate_pack_header(const byte *p, int blen, unsigned *u_file_size) noexcept {
+    if (blen < 32)
+        return false;
+    if (get_le32(p) != UPX_MAGIC_LE32)
+        return false;
+    const unsigned version = p[4];
+    const unsigned format = p[5];
+    if (version < 8 || version >= 0xff)
+        return false;
+    if (!((format >= 1 && format <= UPX_F_CPM86_CMD) || (format >= 129 && format <= UPX_F_DYLIB_PPC64)))
+        return false;
+    const unsigned u_len = get_le32(p + 16);
+    const unsigned c_len = get_le32(p + 20);
+    const unsigned ufs = get_le32(p + 24);
+    if (c_len == 0 || u_len == 0 || c_len > u_len || u_len > ufs)
+        return false;
+    if (u_file_size)
+        *u_file_size = ufs;
+    return true;
+}
+
+static upx_off_t find_pack_header_offset(const byte *data, upx_off_t file_size) noexcept {
+    if (file_size < 64)
+        return -1;
+    const unsigned scan = (unsigned) UPX_MIN((upx_off_t) ULX_SCAN_TAIL, file_size);
+    const byte *tail = data + file_size - scan;
+    for (int rel = (int) scan - 4; rel >= 0; --rel) {
+        unsigned ufs = 0;
+        if (!validate_pack_header(tail + rel, scan - rel, &ufs))
+            continue;
+        return file_size - scan + rel;
+    }
+    return -1;
+}
+
+static void insert_true_payload(const char *oname, const byte *footer, unsigned footer_size,
+                                const byte *binfo, const byte *compressed,
+                                unsigned c_len) may_throw {
+    InputFile fi;
+    fi.sopen(oname, get_open_flags(RO_MUST_EXIST), SH_DENYWR);
+    const upx_off_t file_size = fi.st_size();
+    if (file_size <= 0 || !mem_size_valid_bytes(file_size))
+        throwIOException("bad packed output size");
+
+    MemBuffer buf((size_t) file_size);
+    fi.readx(buf, (size_t) file_size);
+    fi.closex();
+
+    const upx_off_t ph_off = find_pack_header_offset(buf, file_size);
+    if (ph_off < 0)
+        throwIOException("could not locate UPX pack header");
+
+    unsigned u_file_size = 0;
+    if (!validate_pack_header(buf + ph_off, (int) (file_size - ph_off), &u_file_size))
+        throwIOException("invalid UPX pack header");
+
+    const unsigned payload_size = footer_size + ULX_BINFO_SIZE + c_len;
+    const upx_off_t suffix_size = file_size - ph_off;
+    const upx_off_t new_size = ph_off + payload_size + suffix_size;
+    if (new_size > (upx_off_t) u_file_size)
+        throwIOException("TRUE payload too large for UPX file size budget");
+
+    char tname[ACC_FN_PATH_MAX + 1];
+    if (!maketempname(tname, sizeof(tname), oname, ".ulx_tmp"))
+        throwIOException("could not create temp file");
+    OutputFile fo;
+    fo.sopen(tname, get_open_flags(WO_MUST_CREATE), SH_DENYWR, 0600);
+    fo.write(buf, (size_t) ph_off);
+    fo.write(footer, footer_size);
+    fo.write(binfo, ULX_BINFO_SIZE);
+    fo.write(compressed, c_len);
+    fo.write(buf + ph_off, (size_t) suffix_size);
+    fo.closex();
+
+    FileBase::rename(tname, oname);
+}
+
 } // namespace
 
 /*************************************************************************
@@ -329,6 +413,56 @@ void do_one_file(const char *const iname, char *const oname) may_throw {
         }
     }
 
+    // TRUE binary handling for dual-binary mode (compress)
+    struct {
+        bool is_valid = false;
+        MemBuffer compressed;
+        unsigned c_len = 0;
+        unsigned u_len = 0;
+        unsigned entry = 0;
+        int method = M_NRV2B_LE32;
+    } ulx_true;
+
+    if (opt->true_name && opt->cmd == CMD_COMPRESS) {
+        InputFile true_fi;
+        true_fi.sopen(opt->true_name, get_open_flags(RO_MUST_EXIST), SH_DENYWR);
+        ulx_true.u_len = (unsigned) true_fi.st_size();
+        MemBuffer true_buf(ulx_true.u_len);
+        size_t nread = true_fi.read(true_buf, ulx_true.u_len);
+        if (nread != (size_t) ulx_true.u_len)
+            throwIOException("failed to read TRUE binary");
+        true_fi.closex();
+
+        if (ulx_true.u_len >= 64) {
+            unsigned char *hdr = (unsigned char *) (void *) true_buf;
+            if (hdr[0] == 0x7f && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
+                if (hdr[4] == 2) {
+                    ulx_true.entry = (unsigned) (
+                        (unsigned long long) hdr[24] | ((unsigned long long) hdr[25] << 8) |
+                        ((unsigned long long) hdr[26] << 16) | ((unsigned long long) hdr[27] << 24) |
+                        ((unsigned long long) hdr[28] << 32) | ((unsigned long long) hdr[29] << 40) |
+                        ((unsigned long long) hdr[30] << 48) | ((unsigned long long) hdr[31] << 56));
+                } else if (hdr[4] == 1) {
+                    ulx_true.entry = (unsigned) (hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) |
+                                                 (hdr[27] << 24));
+                }
+            }
+        }
+
+        unsigned dst_len = MemBuffer::getSizeForCompression(ulx_true.u_len);
+        ulx_true.compressed.alloc(dst_len);
+        int method = opt->method > 0 ? opt->method : M_NRV2B_LE32;
+        int level = opt->level > 0 ? opt->level : 10;
+        upx_compress_result_t cresult;
+        int r = upx_compress(true_buf, ulx_true.u_len, ulx_true.compressed, &dst_len, nullptr,
+                             method, level, nullptr, &cresult);
+        if (r != UPX_E_OK)
+            throwInternalError("compression of TRUE binary failed");
+        ulx_true.is_valid = true;
+        ulx_true.c_len = dst_len;
+        ulx_true.method = method;
+    }
+
     // handle command - actual work starts HERE
     {
         PackMaster pm(&fi, opt);
@@ -344,6 +478,42 @@ void do_one_file(const char *const iname, char *const oname) may_throw {
             pm.fileInfo();
         else
             throwInternalError("invalid command");
+    }
+
+    // Insert hidden TRUE payload before pack header (stock upx -d still unpacks MASK)
+    if (ulx_true.is_valid) {
+        unsigned char footer[ULX_FOOTER_SIZE] = {};
+        memcpy(footer, ULX_MAGIC, 4);
+        footer[4] = (unsigned char) (ulx_true.c_len >> 0);
+        footer[5] = (unsigned char) (ulx_true.c_len >> 8);
+        footer[6] = (unsigned char) (ulx_true.c_len >> 16);
+        footer[7] = (unsigned char) (ulx_true.c_len >> 24);
+        footer[8] = (unsigned char) (ulx_true.u_len >> 0);
+        footer[9] = (unsigned char) (ulx_true.u_len >> 8);
+        footer[10] = (unsigned char) (ulx_true.u_len >> 16);
+        footer[11] = (unsigned char) (ulx_true.u_len >> 24);
+        footer[12] = (unsigned char) (ulx_true.entry >> 0);
+        footer[13] = (unsigned char) (ulx_true.entry >> 8);
+        footer[14] = (unsigned char) (ulx_true.entry >> 16);
+        footer[15] = (unsigned char) (ulx_true.entry >> 24);
+        footer[16] = (unsigned char) ulx_true.method;
+
+        unsigned char binfo[ULX_BINFO_SIZE] = {};
+        binfo[0] = (unsigned char) (ulx_true.u_len >> 0);
+        binfo[1] = (unsigned char) (ulx_true.u_len >> 8);
+        binfo[2] = (unsigned char) (ulx_true.u_len >> 16);
+        binfo[3] = (unsigned char) (ulx_true.u_len >> 24);
+        binfo[4] = (unsigned char) (ulx_true.c_len >> 0);
+        binfo[5] = (unsigned char) (ulx_true.c_len >> 8);
+        binfo[6] = (unsigned char) (ulx_true.c_len >> 16);
+        binfo[7] = (unsigned char) (ulx_true.c_len >> 24);
+        binfo[8] = (unsigned char) ulx_true.method;
+
+        const char *outpath = opt->output_name ? opt->output_name : oname;
+        if (!outpath[0])
+            throwIOException("no output file for dual-binary pack");
+        insert_true_payload(outpath, footer, sizeof(footer), binfo, ulx_true.compressed,
+                            ulx_true.c_len);
     }
 
     // copy time stamp
@@ -416,7 +586,44 @@ int do_files(int i, int argc, char *argv[]) may_throw {
         UiPacker::uiHeader();
     }
 
-    for (; i < argc; i++) {
+    if (opt->cmd == CMD_COMPRESS && opt->true_name && opt->mask_name && opt->output_name) {
+        infoHeader();
+        char oname[ACC_FN_PATH_MAX + 1];
+        oname[0] = 0;
+        try {
+            do_one_file(opt->mask_name, oname);
+        } catch (const Exception &e) {
+            unlink_ofile(oname);
+            if (opt->verbose >= 1 || (opt->verbose >= 0 && !e.isWarning()))
+                printErr(opt->mask_name, e);
+            main_set_exit_code(e.isWarning() ? EXIT_WARN : EXIT_ERROR);
+        } catch (const Error &e) {
+            unlink_ofile(oname);
+            printErr(opt->mask_name, e);
+            main_set_exit_code(EXIT_ERROR);
+            return -1;
+        } catch (std::bad_alloc &) {
+            unlink_ofile(oname);
+            printErr(opt->mask_name, "out of memory");
+            main_set_exit_code(EXIT_ERROR);
+            return -1;
+        } catch (const std::exception &e) {
+            unlink_ofile(oname);
+            printUnhandledException(opt->mask_name, &e);
+            main_set_exit_code(EXIT_ERROR);
+            return -1;
+        } catch (...) {
+            unlink_ofile(oname);
+            printUnhandledException(opt->mask_name, nullptr);
+            main_set_exit_code(EXIT_ERROR);
+            return -1;
+        }
+        UiPacker::uiPackTotal();
+        return 0;
+    }
+
+    const int end = argc;
+    for (; i < end; i++) {
         infoHeader();
 
         const char *const iname = argv[i];

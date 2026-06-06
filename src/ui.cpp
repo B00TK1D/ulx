@@ -562,6 +562,26 @@ void UiPacker::uiTestEnd() {
 
 /*static*/ void UiPacker::uiTestTotal() { uiFooter("Tested"); }
 
+/*static*/ void UiPacker::uiMaskUnpackStart(upx_off_t packed_size, upx_off_t mask_size) {
+    total_files++;
+    update_fc_len = packed_size;
+    update_fu_len = mask_size;
+    update_c_len = 0;
+    update_u_len = (unsigned) UPX_MIN((upx_off_t)UINT_MAX, mask_size);
+}
+
+/*static*/ void UiPacker::uiMaskTest(const char *name, upx_off_t packed_size) {
+    total_files++;
+    update_fc_len = packed_size;
+    update_fu_len = packed_size;
+    update_c_len = 0;
+    update_u_len = 0;
+    if (opt->verbose >= 1) {
+        con_fprintf(stdout, "testing %s [OK]\n", name);
+        printSetNl(0);
+    }
+}
+
 /*************************************************************************
 // info
 **************************************************************************/

@@ -197,9 +197,25 @@ static noinline void check_and_update_options(int i, int argc) {
         e_usage();
     }
     if (opt->to_stdout || opt->output_name) {
-        if (i + 1 != argc) {
-            fprintf(stderr, "%s: need exactly one argument when using '%s'\n", argv0,
+        bool ok = i + 1 == argc;
+        if (opt->cmd == CMD_COMPRESS && opt->output_name && !opt->to_stdout) {
+            ok = ok || i + 2 == argc;
+            if (opt->true_name && opt->mask_name)
+                ok = ok || i == argc;
+        }
+        if (!ok) {
+            fprintf(stderr, "%s: need exactly one argument when using '%s'", argv0,
                     opt->to_stdout ? "--stdout" : "-o");
+            if (opt->cmd == CMD_COMPRESS && opt->output_name && !opt->to_stdout)
+                fprintf(stderr,
+                        ", two arguments for true/mask packing, or --true and --mask with -o");
+            fprintf(stderr, "\n");
+            e_usage();
+        }
+    }
+    if (opt->cmd == CMD_COMPRESS) {
+        if ((opt->true_name != nullptr) != (opt->mask_name != nullptr)) {
+            fprintf(stderr, "%s: --true and --mask must be used together\n", argv0);
             e_usage();
         }
     }
@@ -794,6 +810,18 @@ static noinline int do_option(int optc, const char *arg) {
         opt->win32_pe.keep_resource = mfx_optarg;
         break;
 
+    // ULX5 dual-binary options
+    case 991: // --true=<file>
+        if (!mfx_optarg || !mfx_optarg[0])
+            e_optarg(arg);
+        opt->true_name = mfx_optarg;
+        break;
+    case 992: // --mask=<file>
+        if (!mfx_optarg || !mfx_optarg[0])
+            e_optarg(arg);
+        opt->mask_name = mfx_optarg;
+        break;
+
 #if !defined(DOCTEST_CONFIG_DISABLE)
     case 999: // [doctest] --dt-XXX option; ignored here, see upx_doctest_check()
         break;
@@ -862,6 +890,10 @@ int main_get_options(int argc, char **argv) {
         {"disable-random-id", 0x90, N, 545},       // for internal debugging
         {"debug-use-random-method", 0x90, N, 546}, // for internal debugging / fuzz testing
         {"debug-use-random-filter", 0x90, N, 547}, // for internal debugging / fuzz testing
+
+        // ULX5 dual-binary options
+        {"true", 0x31, N, 991}, // --true=<file>  real binary executed at runtime
+        {"mask", 0x31, N, 992}, // --mask=<file>  decoy binary shown by upx -d
 
         // backup options
         {"backup", 0x10, N, 'k'},
@@ -1304,8 +1336,23 @@ int upx_main(int argc, char *argv[]) may_throw {
         e_help();
     set_term(stderr);
     check_and_update_options(i, argc);
+    if (opt->cmd == CMD_COMPRESS && opt->output_name && argc - i == 2 && !opt->true_name) {
+        opt->true_name = argv[i];
+        opt->mask_name = argv[i + 1];
+    }
+    if (opt->cmd == CMD_COMPRESS && opt->output_name && argc - i == 1 && opt->true_name
+        && opt->mask_name)
+        ; // dual-binary mode via --true/--mask flags
+    else if (opt->cmd == CMD_COMPRESS && opt->true_name && opt->mask_name && opt->output_name
+             && argc - i != 0) {
+        fprintf(stderr, "%s: do not pass file arguments with --true and --mask\n", argv0);
+        e_usage();
+    }
     int num_files = argc - i;
-    if (num_files < 1) {
+    if (opt->cmd == CMD_COMPRESS && opt->true_name && opt->mask_name && opt->output_name)
+        num_files = 0;
+    if (num_files < 1 && !(opt->cmd == CMD_COMPRESS && opt->true_name && opt->mask_name
+                           && opt->output_name)) {
         if (opt->verbose >= 2)
             e_help();
         else
