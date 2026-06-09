@@ -1,16 +1,4 @@
 
-Merging program properties
-
-Removed property 0xc0000002 to merge tmp/amd64-linux.elf-upxfd_linux.o (0x3) and tmp/amd64-linux.elf-fold.o (not found)
-Removed property 0xc0000002 to merge tmp/amd64-linux.elf-upxfd_linux.o (not found) and tmp/amd64-linux.elf-main2.o (0x3)
-
-Discarded input sections
-
- .note.gnu.property
-                0x0000000000000000       0x20 tmp/amd64-linux.elf-upxfd_linux.o
- .note.gnu.property
-                0x0000000000000000       0x20 tmp/amd64-linux.elf-main2.o
-
 Memory Configuration
 
 Name             Origin             Length             Attributes
@@ -19,56 +7,58 @@ Name             Origin             Length             Attributes
 Linker script and memory map
 
                 0x0000000000000040                . = SIZEOF_HEADERS
+
+.text           0x0000000000000000      0xe9b
+ .text          0x0000000000000000      0x16b tmp/amd64-linux.elf-fold.o
+                0x0000000000000163                get_page_mask
+ *fill*         0x000000000000016b        0x1 00
+ .text          0x000000000000016c        0x0 tmp/amd64-expand.o
+ .text          0x000000000000016c      0xd2f tmp/amd64-linux.elf-main2.o
+                0x0000000000000324                xfind_pages
+                0x00000000000008c5                upx_main2
+                0x00000000000002d9                underlay
+
+UMF_LINUX       0x0000000000000000       0xf9
+ UMF_LINUX      0x0000000000000000       0xf9 tmp/amd64-linux.elf-upxfd_linux.o
+                0x0000000000000000                upx_mmap_and_fd_linux
+
+.data           0x0000000000000000        0x0
+ .data          0x0000000000000000        0x0 tmp/amd64-linux.elf-fold.o
+ .data          0x0000000000000000        0x0 tmp/amd64-expand.o
+ .data          0x0000000000000000        0x0 tmp/amd64-linux.elf-main2.o
+
+.bss            0x0000000000000000        0x0
+ .bss           0x0000000000000000        0x0 tmp/amd64-linux.elf-fold.o
+ .bss           0x0000000000000000        0x0 tmp/amd64-expand.o
+ .bss           0x0000000000000000        0x0 tmp/amd64-linux.elf-main2.o
 LOAD tmp/amd64-linux.elf-fold.o
 LOAD tmp/amd64-expand.o
 LOAD tmp/amd64-linux.elf-upxfd_linux.o
 LOAD tmp/amd64-linux.elf-main2.o
 OUTPUT(tmp/amd64-linux.elf-fold.bin elf64-x86-64)
 
-.text           0x0000000000000000      0xe10
- .text          0x0000000000000000      0x16b tmp/amd64-linux.elf-fold.o
-                0x0000000000000163                get_page_mask
- .text          0x000000000000016b        0x0 tmp/amd64-expand.o
- .text          0x000000000000016b       0xd1 tmp/amd64-linux.elf-upxfd_linux.o
-                0x000000000000016b                upx_mmap_and_fd_linux
- .text          0x000000000000023c      0xbd4 tmp/amd64-linux.elf-main2.o
-                0x000000000000039a                underlay
-                0x00000000000003f2                xfind_pages
-                0x0000000000000962                upx_main2
-
-.data           0x0000000000000000        0x0
- .data          0x0000000000000000        0x0 tmp/amd64-linux.elf-fold.o
- .data          0x0000000000000000        0x0 tmp/amd64-expand.o
- .data          0x0000000000000000        0x0 tmp/amd64-linux.elf-upxfd_linux.o
- .data          0x0000000000000000        0x0 tmp/amd64-linux.elf-main2.o
-
-.bss            0x0000000000000000        0x0
- .bss           0x0000000000000000        0x0 tmp/amd64-linux.elf-fold.o
- .bss           0x0000000000000000        0x0 tmp/amd64-expand.o
- .bss           0x0000000000000000        0x0 tmp/amd64-linux.elf-upxfd_linux.o
- .bss           0x0000000000000000        0x0 tmp/amd64-linux.elf-main2.o
-
-SYSCALLS        0x0000000000000000       0xd6
- SYSCALLS       0x0000000000000000       0xd6 tmp/amd64-linux.elf-fold.o
-                0x0000000000000000                my_bkpt
-                0x0000000000000011                memfd_create
-                0x0000000000000011                upxfd_create
+SYSCALLS        0x0000000000000000       0xe6
+ SYSCALLS       0x0000000000000000       0xe6 tmp/amd64-linux.elf-fold.o
                 0x000000000000004a                Pmap
-                0x000000000000005b                mmap
+                0x00000000000000b4                munmap
+                0x00000000000000c4                execve
                 0x0000000000000076                Psync
-                0x000000000000008c                Pprotect
-                0x000000000000009e                Punmap
-                0x00000000000000ae                munmap
-                0x00000000000000b2                exit
-                0x00000000000000b6                brk
-                0x00000000000000ba                close
-                0x00000000000000be                ftruncate
-                0x00000000000000c2                open
-                0x00000000000000c6                mprotect
-                0x00000000000000ca                msync
-                0x00000000000000ce                write
-                0x00000000000000ce                Pwrite
-                0x00000000000000d2                read
+                0x00000000000000cb                ftruncate
+                0x000000000000005b                mmap
+                0x00000000000000db                write
+                0x0000000000000011                memfd_create
+                0x00000000000000df                read
+                0x00000000000000d7                msync
+                0x0000000000000011                upxfd_create
+                0x0000000000000000                my_bkpt
+                0x000000000000008f                Pprotect
+                0x00000000000000db                Pwrite
+                0x00000000000000a4                Punmap
+                0x00000000000000b8                exit
+                0x00000000000000bc                brk
+                0x00000000000000cf                open
+                0x00000000000000d3                mprotect
+                0x00000000000000c0                close
 
 EXP_HEAD        0x0000000000000000       0xe9
  EXP_HEAD       0x0000000000000000       0xe9 tmp/amd64-expand.o
@@ -102,17 +92,6 @@ EXP_TAIL        0x0000000000000000       0x14
  EXP_TAIL       0x0000000000000000       0x14 tmp/amd64-expand.o
                 0x0000000000000014                upx_mmap_and_fd
 
-STRCON          0x0000000000000000       0x66
+STRCON          0x0000000000000000       0x92
  STRCON         0x0000000000000000       0x4b tmp/amd64-linux.elf-upxfd_linux.o
- STRCON         0x000000000000004b       0x1b tmp/amd64-linux.elf-main2.o
-
-.comment        0x0000000000000000       0x5c
- .comment       0x0000000000000000       0x2e tmp/amd64-linux.elf-upxfd_linux.o
- .comment       0x000000000000002e       0x2e tmp/amd64-linux.elf-main2.o
-
-.note.GNU-stack
-                0x0000000000000000        0x0
- .note.GNU-stack
-                0x0000000000000000        0x0 tmp/amd64-linux.elf-upxfd_linux.o
- .note.GNU-stack
-                0x0000000000000000        0x0 tmp/amd64-linux.elf-main2.o
+ STRCON         0x000000000000004b       0x47 tmp/amd64-linux.elf-main2.o

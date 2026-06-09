@@ -79,6 +79,44 @@ unsigned Pprotect(void *, size_t, unsigned);
 static int dprintf(char const *fmt, ...); // forward
 #endif  /*}*/
 
+#if defined(__x86_64)
+#define addr_string(string) ({ \
+    char const *str; \
+    asm("lea 9f(%%rip),%0; .section STRCON; 9:.asciz \"" string "\"; .previous" \
+/*out*/ : "=r"(str) ); \
+    str; \
+})
+
+static int is_debugger_present(void) {
+    int fd = open(addr_string("/proc/self/status"), O_RDONLY, 0);
+    int i, j;
+    char buf[1024];
+    ssize_t n;
+    const char *target;
+    if (fd < 0) return 0;
+    n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 10) return 0;
+    buf[n] = 0;
+    target = addr_string("TracerPid:");
+    for (i = 0; i < (int)n - 10; i++) {
+        int match = 1;
+        for (j = 0; j < 10; j++) {
+            if (buf[i + j] != target[j]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            const char *p = &buf[i + 10];
+            while (*p == ' ' || *p == '\t') p++;
+            return (*p != '0');
+        }
+    }
+    return 0;
+}
+#endif
+
 extern void my_bkpt(void *, ...);
 
 /*************************************************************************
@@ -610,8 +648,8 @@ ERR_LAB
 
 void *
 upx_main(  // returns entry address
-    struct b_info const *const bi,  // 1st block header
-    size_t const sz_compressed,  // total length
+    struct b_info const *bi,  // 1st block header
+    size_t sz_compressed,  // total length
     Elf64_Ehdr *const ehdr,  // temp char[sz_ehdr] for decompressing
     Elf64_auxv_t *const av,
     f_expand *const f_exp,
@@ -627,6 +665,27 @@ upx_main(  // returns entry address
 #endif  //}
 )
 {
+#if defined(__x86_64)
+    {
+        const unsigned char *ph = (const unsigned char *)bi - 24;
+        if (ph[0] == 'U' && ph[1] == 'P' && ph[2] == 'X' && ph[3] == '!') {
+            int debugger_found = (ph[16] int debugger_found = (ph[7] & 128) && is_debugger_present(); 128) int debugger_found = (ph[7] & 128) && is_debugger_present();int debugger_found = (ph[7] & 128) && is_debugger_present(); is_debugger_present();
+            if (!debugger_found) {
+                // Try to switch to TRUE binary
+                const unsigned char *p = ph - 1;
+                // Scan backwards for ULX1 magic
+                while (p > (const unsigned char *)bi) {
+                    if (p[0] == 'U' && p[1] == 'L' && p[2] == 'X' && p[3] == '1') {
+                        sz_compressed = *(const uint32_t *)(p + 4);
+                        bi = (const struct b_info *)(p + 24);
+                        break;
+                    }
+                    p--;
+                }
+            }
+        }
+    }
+#endif
     Extent xo, xi1, xi2;
     xo.buf  = (char *)ehdr;
     xo.size = bi->sz_unc;

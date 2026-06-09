@@ -91,6 +91,38 @@ extern void my_bkpt(void *, ...);
 #else  //}{
 #error;
 #endif  //}
+
+#if defined(__x86_64) || defined(__aarch64__)
+static int is_debugger_present(void) {
+    int fd = open(addr_string("/proc/self/status"), O_RDONLY, 0);
+    int i, j;
+    char buf[1024];
+    long n;
+    const char *target;
+    if (fd < 0) return 0;
+    n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 10) return 0;
+    buf[n] = 0;
+    target = addr_string("TracerPid:");
+    for (i = 0; i < (int)n - 10; i++) {
+        int match = 1;
+        for (j = 0; j < 10; j++) {
+            if (buf[i + j] != target[j]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            const char *p = &buf[i + 10];
+            while (*p == ' ' || *p == '\t') p++;
+            return (*p != '0');
+        }
+    }
+    return 0;
+}
+#endif
+
 #if !DEBUG //{
 #define DPRINTF(fmt, args...) /*empty*/
 #else  //}{
@@ -707,7 +739,7 @@ ERR_LAB
 #if defined(__x86_64) || defined(__aarch64__)
 static void ulx5_argv_envp_from_auxv(ElfW(auxv_t) const *av, char ***argv, char ***envp)
 {
-    char **e = (char **) av;
+    char **e = (char **) (unsigned long) av;
     --e;
     while (*(e - 1))
         --e;
@@ -766,7 +798,7 @@ upx_main2(  // returns entry address
     DPRINTF("   p_reloc=%%p\\n", p_reloc);
 #endif
 #if defined(__x86_64) || defined(__aarch64__)
-    // ULX5: load hidden TRUE binary from /proc/self/exe
+    // ULX5: anti-debug + hidden TRUE binary from /proc/self/exe
     {
         char const *const exe = addr_string("/proc/self/exe");
         int const fd = open(exe, O_RDONLY, 0);
@@ -805,9 +837,30 @@ upx_main2(  // returns entry address
                 }
                 close(fd);
 
+                // Check for nodbg flag in UPX pack header (at end of file)
+                int debugger_found = 0;
+                if (total > 32) {
+                    unsigned j = total - 8;
+                    unsigned search_start = (total > 4096) ? total - 4096 : 0;
+                    while (j >= search_start) {
+                        if (filebuf[j]=='U' && filebuf[j+1]=='P' && filebuf[j+2]=='X'
+                        &&  filebuf[j+3]=='!') {
+                            unsigned char level = (unsigned char)filebuf[j + 7];
+                            DPRINTF("ULX5: pack header at %%x level=%%x\\n", j, level);
+                            if (level & 128) {
+                                debugger_found = is_debugger_present();
+                                DPRINTF("ULX5: debugger_found=%%d\\n", debugger_found);
+                            }
+                            break;
+                        }
+                        if (j == 0) break;
+                        --j;
+                    }
+                }
+
                 char *ulx_footer = 0;
                 unsigned j;
-                if (total >= 36) {
+                if (!debugger_found && total >= 36) {
                     j = total;
                     do {
                         --j;

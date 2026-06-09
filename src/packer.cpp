@@ -155,8 +155,8 @@ bool Packer::compress(SPAN_P(byte) i_ptr, unsigned i_len, SPAN_P(byte) o_ptr,
                       const upx_compress_config_t *cconf_parm) {
     ph.u_len = i_len;
     ph.c_len = 0;
-    assert(ph.level >= 1);
-    assert(ph.level <= 10);
+    assert((ph.level & 15) >= 1);
+    assert((ph.level & 15) <= 10);
 
     // Avoid too many progress bar updates. 64 is s->bar_len in ui.cpp.
     unsigned step = (ph.u_len < 64 * 1024) ? 0 : ph.u_len / 64;
@@ -174,6 +174,11 @@ bool Packer::compress(SPAN_P(byte) i_ptr, unsigned i_len, SPAN_P(byte) o_ptr,
         cconf = *cconf_parm;
     // cconf options
     int method = ph_forced_method(ph.method);
+    
+    // Mask the anti-debugger bit for level validation
+    int level_for_check = ph.level & 15;
+    assert(level_for_check >= 1);
+    assert(level_for_check <= 10);
     if (M_IS_NRV2B(method) || M_IS_NRV2D(method) || M_IS_NRV2E(method)) {
         if (opt->crp.crp_ucl.c_flags != -1)
             cconf.conf_ucl.c_flags = opt->crp.crp_ucl.c_flags;
@@ -213,7 +218,7 @@ bool Packer::compress(SPAN_P(byte) i_ptr, unsigned i_len, SPAN_P(byte) o_ptr,
 
     // compress
     int r = upx_compress(raw_bytes(i_ptr, ph.u_len), ph.u_len, raw_bytes(o_ptr, 0), &ph.c_len,
-                         uip->getCallback(), method, ph.level, &cconf, &ph.compress_result);
+                         uip->getCallback(), method, ph.level & 15, &cconf, &ph.compress_result);
 
     // uip->finalCallback(ph.u_len, ph.c_len);
     uip->endCallback();
@@ -503,11 +508,14 @@ void Packer::updatePackHeader() {
     const int *m = getCompressionMethods(opt->method, opt->level);
     ph.method = m[0];
     ph.level = opt->level;
-    if (ph.level < 0)
+    if (ph.level <= 0)
         ph.level = file_size < 512 * 1024 ? 8 : 7;
+    if (opt->nodbg)
+        ph.level |= 128;
+
     //
     assert(isValidCompressionMethod(ph.method));
-    assert(1 <= ph.level && ph.level <= 10);
+    assert(1 <= (ph.level & 15) && (ph.level & 15) <= 10);
 }
 
 // FIXME: remove patchPackHeader() and fold into relocateLoader();

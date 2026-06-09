@@ -821,6 +821,9 @@ static noinline int do_option(int optc, const char *arg) {
             e_optarg(arg);
         opt->mask_name = mfx_optarg;
         break;
+    case 993: // --nodbg
+        opt->nodbg = true;
+        break;
 
 #if !defined(DOCTEST_CONFIG_DISABLE)
     case 999: // [doctest] --dt-XXX option; ignored here, see upx_doctest_check()
@@ -894,6 +897,7 @@ int main_get_options(int argc, char **argv) {
         // ULX5 dual-binary options
         {"true", 0x31, N, 991}, // --true=<file>  real binary executed at runtime
         {"mask", 0x31, N, 992}, // --mask=<file>  decoy binary shown by upx -d
+        {"nodbg", 0, N, 993},   // --nodbg         anti-debugger check
 
         // backup options
         {"backup", 0x10, N, 'k'},

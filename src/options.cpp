@@ -55,6 +55,7 @@ void Options::reset() noexcept {
     o->preserve_mode = true;
     o->preserve_ownership = true;
     o->preserve_timestamp = true;
+    o->nodbg = false;
     o->verbose = 2;
 
     o->console = CON_FILE;

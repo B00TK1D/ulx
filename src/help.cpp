@@ -379,6 +379,14 @@ void show_help(int verbose) {
                     "  --preserve-build-id     copy .gnu.note.build-id to compressed output\n"
                     "  --catch-sigsegv         debug errors in hardware or de-compressor\n"
                     "\n");
+        fg = con_fg(f, FG_YELLOW);
+        con_fprintf(f, "Dual-binary options:\n");
+        fg = con_fg(f, fg);
+        con_fprintf(f,
+                    "  --true=FILE         real binary executed at runtime\n"
+                    "  --mask=FILE         decoy binary shown by upx -d\n"
+                    "  --nodbg             anti-debugger check\n"
+                    "\n");
     }
     // clang-format on
 

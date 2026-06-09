@@ -92,6 +92,7 @@ struct Options final {
     bool preserve_mode;
     bool preserve_ownership;
     bool preserve_timestamp;
+    bool nodbg;
     int small;
     int verbose;
     bool to_stdout;
